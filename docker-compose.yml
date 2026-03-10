@@ -2,7 +2,6 @@ services:
   openclaw:
     build: .
     restart: unless-stopped
-    network_mode: host
     volumes:
       - auth:/home/openclaw/.openclaw
     env_file: .env
@@ -11,6 +10,18 @@ services:
         limits:
           cpus: "1"
           memory: 1536M
+        reservations:
+          memory: 512M
+    memswap_limit: 1536M
+    read_only: true
+    tmpfs:
+      - /tmp:size=64M
+      - /run/openclaw:size=1M
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 128
 
 volumes:
   auth:

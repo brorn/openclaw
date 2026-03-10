@@ -24,6 +24,7 @@ cd openclaw
 ### 3. Configurar
 
 ```bash
+cp .env.example .env
 nano .env
 ```
 
@@ -43,25 +44,49 @@ docker compose run --rm -it --entrypoint openclaw openclaw auth login --provider
 
 Token salvo no volume `auth`, compartilhado por todas as instancias.
 
-### 6. Subir uma instancia
+### 6. Criar env da instancia
 
 ```bash
+cp .env .env.claw1
+nano .env.claw1
+```
+
+Adicione o token do bot:
+
+```env
+ALLOWED_TELEGRAM_USERS=123456789
+TELEGRAM_BOT_TOKEN=<token_do_botfather>
+INSTANCE_NAME=Claw 1
+```
+
+### 7. Subir uma instancia
+
+```bash
+docker network create claw-1-net
 docker compose run -d --name claw-1 \
-  -e TELEGRAM_BOT_TOKEN=<token_do_botfather> \
-  -e INSTANCE_NAME="Claw 1" \
+  --network claw-1-net \
+  -p 127.0.0.1:9201:9201 -p 127.0.0.1:18701:18701 \
+  --env-file .env.claw1 \
   openclaw
 ```
 
-### 7. Mais instancias? Roda de novo
+### 8. Mais instancias? Roda de novo
 
 ```bash
+cp .env .env.claw2
+nano .env.claw2
+```
+
+```bash
+docker network create claw-2-net
 docker compose run -d --name claw-2 \
-  -e TELEGRAM_BOT_TOKEN=<outro_token> \
-  -e INSTANCE_NAME="Claw 2" \
+  --network claw-2-net \
+  -p 127.0.0.1:9202:9201 -p 127.0.0.1:18702:18701 \
+  --env-file .env.claw2 \
   openclaw
 ```
 
-Cada uma usa seu bot do Telegram. Repita quantas vezes quiser.
+Cada uma usa seu bot do Telegram e sua propria rede isolada. Incremente as portas externas (9203/18703, 9204/18704, ...) para cada instancia. Todas as portas ficam acessiveis apenas localmente (127.0.0.1).
 
 ## Comandos
 
@@ -75,12 +100,7 @@ docker stats                             # CPU/RAM
 
 ## CAPTCHA ou login no browser?
 
-O Chromium roda headless mas com remote debugging ativado. As portas sao atribuidas automaticamente (9201, 9202, ...). Veja qual porta cada instancia pegou nos logs:
-
-```bash
-docker logs claw-1 2>&1 | head -1
-# [Jujuba] debug=:9201 gateway=:18701
-```
+O Chromium roda headless com remote debugging na porta interna 9201. Use a porta externa que voce mapeou com `-p` ao subir a instancia (ex: 9201 para claw-1, 9202 para claw-2).
 
 A porta de debug so aceita conexoes locais (127.0.0.1). Para intervir (CAPTCHA, login manual, etc), abra um tunel SSH e acesse no navegador:
 
@@ -88,11 +108,7 @@ A porta de debug so aceita conexoes locais (127.0.0.1). Para intervir (CAPTCHA, 
 ssh -L 9201:127.0.0.1:9201 user@<ip-do-pi>
 ```
 
-Depois abra no navegador:
-
-```
-http://localhost:9201
-```
+Depois abra `http://localhost:9201` no navegador.
 
 ## Token expirou?
 
