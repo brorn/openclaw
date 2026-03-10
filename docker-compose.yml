@@ -1,0 +1,15 @@
+services:
+  openclaw:
+    build: .
+    restart: unless-stopped
+    volumes:
+      - auth:/home/openclaw/.openclaw
+    env_file: .env
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1536M
+
+volumes:
+  auth:
