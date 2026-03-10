@@ -1,27 +1,44 @@
 services:
   openclaw:
     build: .
+    init: true
     restart: unless-stopped
     volumes:
       - auth:/home/openclaw/.openclaw
     env_file: .env
-    deploy:
-      resources:
-        limits:
-          cpus: "1"
-          memory: 1536M
-        reservations:
-          memory: 512M
+    secrets:
+      - telegram_bot_token
+    ports:
+      - "127.0.0.1:9201:9201"
+      - "127.0.0.1:18701:18701"
+    mem_limit: 1536M
     memswap_limit: 1536M
+    cpus: "1"
     read_only: true
     tmpfs:
       - /tmp:size=64M
       - /run/openclaw:size=1M
     security_opt:
       - no-new-privileges:true
+      - seccomp:seccomp-profile.json
     cap_drop:
       - ALL
     pids_limit: 128
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - openclaw-net
+
+secrets:
+  telegram_bot_token:
+    file: ./secrets/telegram_bot_token
+
+networks:
+  openclaw-net:
+    driver: bridge
 
 volumes:
   auth:

@@ -1,0 +1,188 @@
+{
+  "defaultAction": "SCMP_ACT_ERRNO",
+  "archMap": [
+    {
+      "architecture": "SCMP_ARCH_X86_64",
+      "subArchitectures": ["SCMP_ARCH_X86", "SCMP_ARCH_X32"]
+    },
+    {
+      "architecture": "SCMP_ARCH_AARCH64",
+      "subArchitectures": ["SCMP_ARCH_ARM"]
+    }
+  ],
+  "syscalls": [
+    {
+      "comment": "File operations",
+      "names": [
+        "access", "faccessat", "faccessat2",
+        "open", "openat", "openat2", "creat",
+        "close", "close_range",
+        "read", "pread64", "readv", "preadv",
+        "write", "pwrite64", "writev", "pwritev",
+        "lseek",
+        "stat", "fstat", "lstat", "newfstatat", "statx",
+        "statfs", "fstatfs",
+        "getdents", "getdents64",
+        "getcwd",
+        "dup", "dup2", "dup3",
+        "fcntl",
+        "flock",
+        "fsync", "fdatasync",
+        "ftruncate", "truncate",
+        "rename", "renameat", "renameat2",
+        "link", "linkat", "symlink", "symlinkat",
+        "unlink", "unlinkat",
+        "mkdir", "mkdirat",
+        "rmdir",
+        "readlink", "readlinkat",
+        "chmod", "fchmod", "fchmodat",
+        "chown", "fchown", "fchownat", "lchown",
+        "utime", "utimensat", "utimes",
+        "fallocate", "fadvise64",
+        "readahead",
+        "copy_file_range",
+        "splice", "tee", "vmsplice",
+        "sendfile",
+        "pipe", "pipe2",
+        "umask",
+        "chdir", "fchdir"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Memory management",
+      "names": [
+        "brk",
+        "mmap", "munmap", "mremap",
+        "mprotect",
+        "madvise",
+        "mlock", "mlock2", "munlock",
+        "mincore",
+        "memfd_create",
+        "membarrier",
+        "msync"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Process management",
+      "names": [
+        "fork", "vfork", "clone", "clone3",
+        "execve",
+        "exit", "exit_group",
+        "wait4", "waitid",
+        "getpid", "getppid", "gettid",
+        "getuid", "geteuid", "getgid", "getegid",
+        "getresuid", "getresgid",
+        "getgroups",
+        "getpgid", "getpgrp",
+        "setpgid", "setsid",
+        "getrlimit", "prlimit64",
+        "getrusage",
+        "getpriority", "setpriority",
+        "prctl",
+        "arch_prctl",
+        "set_tid_address",
+        "set_robust_list", "get_robust_list",
+        "futex",
+        "sched_yield",
+        "sched_getaffinity", "sched_setaffinity",
+        "sched_getscheduler", "sched_setscheduler",
+        "sched_getparam", "sched_setparam",
+        "sched_get_priority_max", "sched_get_priority_min",
+        "capget",
+        "rseq",
+        "pidfd_open"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Networking",
+      "names": [
+        "socket", "socketpair",
+        "bind", "listen", "accept", "accept4",
+        "connect",
+        "sendto", "sendmsg", "sendmmsg",
+        "recvfrom", "recvmsg", "recvmmsg",
+        "getsockopt", "setsockopt",
+        "getsockname", "getpeername",
+        "shutdown"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Signals",
+      "names": [
+        "rt_sigaction", "rt_sigprocmask", "rt_sigreturn",
+        "rt_sigpending", "rt_sigsuspend", "rt_sigtimedwait",
+        "rt_sigqueueinfo",
+        "sigaltstack",
+        "signalfd", "signalfd4",
+        "kill", "tgkill", "tkill"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Epoll, poll, select",
+      "names": [
+        "epoll_create", "epoll_create1",
+        "epoll_ctl",
+        "epoll_wait", "epoll_pwait",
+        "poll", "ppoll",
+        "select", "pselect6"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Timers and clocks",
+      "names": [
+        "clock_gettime", "clock_getres", "clock_nanosleep",
+        "gettimeofday",
+        "nanosleep",
+        "timer_create", "timer_settime", "timer_gettime",
+        "timer_getoverrun", "timer_delete",
+        "timerfd_create", "timerfd_settime", "timerfd_gettime",
+        "times",
+        "getitimer", "setitimer"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "IO control",
+      "names": [
+        "ioctl"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "Events and notifications",
+      "names": [
+        "eventfd", "eventfd2",
+        "inotify_init", "inotify_init1",
+        "inotify_add_watch", "inotify_rm_watch"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "IPC (needed by Chromium)",
+      "names": [
+        "shmget", "shmat", "shmdt", "shmctl",
+        "semget", "semop", "semtimedop", "semctl",
+        "msgget", "msgsnd", "msgrcv", "msgctl"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    },
+    {
+      "comment": "System info and misc",
+      "names": [
+        "uname", "sysinfo",
+        "getrandom",
+        "seccomp",
+        "restart_syscall",
+        "getxattr", "lgetxattr", "fgetxattr",
+        "listxattr", "llistxattr", "flistxattr"
+      ],
+      "action": "SCMP_ACT_ALLOW"
+    }
+  ]
+}
