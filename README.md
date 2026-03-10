@@ -1,6 +1,6 @@
 # OpenClaw Docker — Pi 5
 
-Uma imagem, quantas instancias quiser. Telegram + OpenAI via SSO.
+Uma imagem, quantas instancias quiser. OpenAI via SSO, Telegram opcional.
 
 ## Setup
 
@@ -28,14 +28,28 @@ cp .env.example .env
 nano .env
 ```
 
-Troque `ALLOWED_TELEGRAM_USERS` pelo seu ID numerico ([@userinfobot](https://t.me/userinfobot)).
+O Telegram e opcional. Se quiser rodar sem, nao precisa mexer em nada — pule para o passo 4.
 
-Crie o secret do bot token (recomendado em vez de env var):
+#### Ativar Telegram
 
-```bash
-echo "SEU_TOKEN_DO_BOTFATHER" > secrets/telegram_bot_token
-chmod 600 secrets/telegram_bot_token
+Voce precisa de duas coisas: o **token do bot** e o **seu user ID**.
+
+**Token do bot** — pegue com o [@BotFather](https://t.me/BotFather) no Telegram. Depois escolha **uma** das formas abaixo para salvar:
+
+| Metodo | Onde fazer | Como |
+|---|---|---|
+| **Secret (recomendado)** | No terminal, dentro da pasta do projeto | `echo "123456:ABC-DEF" > secrets/telegram_bot_token && chmod 600 secrets/telegram_bot_token` |
+| **Env var (fallback)** | No arquivo `.env` | Adicione a linha `TELEGRAM_BOT_TOKEN=123456:ABC-DEF` |
+
+O secret e mais seguro porque o token fica em arquivo separado, nao aparece em `docker inspect` nem em `/proc/*/environ`. Se os dois existirem, o secret tem prioridade.
+
+**User ID** — descubra o seu enviando qualquer mensagem para [@userinfobot](https://t.me/userinfobot). Depois adicione no `.env`:
+
+```env
+ALLOWED_TELEGRAM_USERS=123456789
 ```
+
+Para permitir varios usuarios, separe por virgula: `ALLOWED_TELEGRAM_USERS=111,222,333`
 
 ### 4. Docker Content Trust (opcional)
 
@@ -67,13 +81,17 @@ cp .env .env.claw1
 nano .env.claw1
 ```
 
-Adicione o token do bot:
+Defina pelo menos o nome da instancia. Se quiser Telegram nesta instancia, adicione o token e user ID (cada instancia precisa do seu proprio bot):
 
 ```env
+INSTANCE_NAME=Claw 1
+
+# Telegram (opcional — remova se nao quiser)
 ALLOWED_TELEGRAM_USERS=123456789
 TELEGRAM_BOT_TOKEN=<token_do_botfather>
-INSTANCE_NAME=Claw 1
 ```
+
+> **Nota:** para multi-instancia, o token do bot vai direto no `.env.claw1` (env var) em vez de no arquivo secret, porque cada instancia precisa do seu proprio token. Se preferir usar secrets, crie arquivos separados (ex: `secrets/telegram_bot_token_claw1`) e ajuste o volume mount.
 
 ### 8. Subir uma instancia
 
@@ -117,7 +135,7 @@ docker stats                             # CPU/RAM
 ## Seguranca
 
 - **Portas de debug (9201+):** O Chromium remote debugging da acesso total ao browser (cookies, sessoes, execucao de JS). **Sempre** use `127.0.0.1:` ao mapear portas com `-p`. Nunca exponha para a rede sem SSH tunnel.
-- **Token do Telegram:** Use Docker secrets (`secrets/telegram_bot_token`) em vez de env var. O token fica montado em `/run/secrets/` dentro do container, sem exposicao em `/proc/1/environ`.
+- **Token do Telegram (se ativado):** Prefira Docker secrets (`secrets/telegram_bot_token`) em vez de env var. O token fica montado em `/run/secrets/` dentro do container, sem exposicao em `/proc/1/environ`.
 - **Volume `auth`:** Contem tokens de autenticacao do OpenAI. Proteja o host onde o Docker roda.
 - **Multi-instancia:** Ao usar `docker compose run`, as portas do `docker-compose.yml` nao sao mapeadas automaticamente. Sempre passe `-p 127.0.0.1:PORTA:PORTA` explicitamente.
 - **Permissoes:** `chmod 600 .env* secrets/*`
@@ -129,7 +147,7 @@ docker stats                             # CPU/RAM
 
 **Restricao de egress (firewall no host):**
 
-O container precisa acessar apenas a API do Telegram e do OpenAI. No host, restrinja o trafego de saida com iptables:
+O container precisa acessar apenas a API do OpenAI (e do Telegram, se ativado). No host, restrinja o trafego de saida com iptables:
 
 ```bash
 # Permitir DNS

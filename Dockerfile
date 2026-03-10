@@ -20,13 +20,18 @@ if [ -f /run/secrets/telegram_bot_token ]; then
   export TELEGRAM_BOT_TOKEN
 fi
 
-# --- validacao de inputs ---
-: "${TELEGRAM_BOT_TOKEN:?required — use Docker secret ou env var}"
-: "${ALLOWED_TELEGRAM_USERS:?required}"
-
-case "$TELEGRAM_BOT_TOKEN" in
-  *[!A-Za-z0-9:_-]*) echo "ERRO: TELEGRAM_BOT_TOKEN contem caracteres invalidos" >&2; exit 1 ;;
-esac
+# --- validacao de inputs (telegram opcional) ---
+if [ -n "${TELEGRAM_BOT_TOKEN:-}" ]; then
+  case "$TELEGRAM_BOT_TOKEN" in
+    *[!A-Za-z0-9:_-]*) echo "ERRO: TELEGRAM_BOT_TOKEN contem caracteres invalidos" >&2; exit 1 ;;
+  esac
+  : "${ALLOWED_TELEGRAM_USERS:?required quando TELEGRAM_BOT_TOKEN esta definido}"
+  case "$ALLOWED_TELEGRAM_USERS" in
+    *[!0-9,\ ]*|*,,*|,*|*,) echo "ERRO: ALLOWED_TELEGRAM_USERS formato invalido (use: ID1,ID2)" >&2; exit 1 ;;
+  esac
+else
+  echo "AVISO: TELEGRAM_BOT_TOKEN nao definido — rodando sem Telegram" >&2
+fi
 
 # limite de tamanho (max 64 chars)
 _name="${INSTANCE_NAME:-OpenClaw}"
@@ -37,10 +42,6 @@ fi
 # whitelist: apenas caracteres imprimiveis
 case "${INSTANCE_NAME:-OpenClaw}" in
   *[![:print:]]*) echo "ERRO: INSTANCE_NAME contem caracteres invalidos" >&2; exit 1 ;;
-esac
-
-case "$ALLOWED_TELEGRAM_USERS" in
-  *[!0-9,\ ]*|*,,*|,*|*,) echo "ERRO: ALLOWED_TELEGRAM_USERS formato invalido (use: ID1,ID2)" >&2; exit 1 ;;
 esac
 
 export DEBUG_PORT=9201
@@ -57,14 +58,16 @@ const config = {
       model: { primary: "openai/gpt-4o", fallbacks: ["openai/gpt-4-turbo"] }
     }
   },
-  channels: {
-    telegram: {
-      enabled: true,
-      botToken: process.env.TELEGRAM_BOT_TOKEN,
-      dmPolicy: "allowlist",
-      allowFrom: process.env.ALLOWED_TELEGRAM_USERS.split(",").map(s => s.trim())
-    }
-  },
+  channels: Object.assign({},
+    process.env.TELEGRAM_BOT_TOKEN ? {
+      telegram: {
+        enabled: true,
+        botToken: process.env.TELEGRAM_BOT_TOKEN,
+        dmPolicy: "allowlist",
+        allowFrom: process.env.ALLOWED_TELEGRAM_USERS.split(",").map(s => s.trim())
+      }
+    } : {}
+  ),
   auth: {
     profiles: { "openai:sso": { mode: "sso" } },
     order: { openai: ["openai:sso"] }
