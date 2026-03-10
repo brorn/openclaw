@@ -73,6 +73,21 @@ docker stop claw-1 && docker rm claw-1   # remover
 docker stats                             # CPU/RAM
 ```
 
+## CAPTCHA ou login no browser?
+
+O Chromium roda headless mas com remote debugging ativado. As portas sao atribuidas automaticamente (9201, 9202, ...). Veja qual porta cada instancia pegou nos logs:
+
+```bash
+docker logs claw-1 2>&1 | head -1
+# [Jujuba] debug=:9201 gateway=:18701
+```
+
+Para intervir (CAPTCHA, login manual, etc), abra no navegador do seu computador:
+
+```
+http://<ip-do-pi>:9201
+```
+
 ## Token expirou?
 
 ```bash

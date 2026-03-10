@@ -2,6 +2,7 @@ services:
   openclaw:
     build: .
     restart: unless-stopped
+    network_mode: host
     volumes:
       - auth:/home/openclaw/.openclaw
     env_file: .env

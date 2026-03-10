@@ -1,6 +1,6 @@
 FROM node:20-bookworm-slim
 
-RUN apt-get update && apt-get install -y --no-install-recommends chromium \
+RUN apt-get update && apt-get install -y --no-install-recommends chromium iproute2 \
     && rm -rf /var/lib/apt/lists/* \
     && npm install -g openclaw \
     && useradd -m -s /bin/bash openclaw \
@@ -11,6 +11,13 @@ COPY <<'ENTRY' /usr/local/bin/entrypoint.sh
 set -eu
 
 USERS=$(echo "$ALLOWED_TELEGRAM_USERS" | sed 's/[[:space:]]*,[[:space:]]*/", "/g; s/^/"/; s/$/"/')
+N=1
+while ss -tlnH 2>/dev/null | grep -q ":$((9200 + N)) "; do
+  N=$((N + 1))
+done
+DEBUG_PORT=$((9200 + N))
+GATEWAY_PORT=$((18700 + N))
+echo "[${INSTANCE_NAME:-OpenClaw}] debug=:${DEBUG_PORT} gateway=:${GATEWAY_PORT}"
 
 cat > /tmp/openclaw.json <<CFG
 {
@@ -32,7 +39,10 @@ cat > /tmp/openclaw.json <<CFG
     "profiles": { "openai:sso": { "mode": "sso" } },
     "order": { "openai": ["openai:sso"] }
   },
-  "gateway": { "port": 18789 }
+  "browser": {
+    "args": ["--remote-debugging-port=${DEBUG_PORT}", "--remote-debugging-address=0.0.0.0"]
+  },
+  "gateway": { "port": ${GATEWAY_PORT} }
 }
 CFG
 
