@@ -2,7 +2,7 @@ FROM node:20-bookworm-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends chromium iproute2 \
     && rm -rf /var/lib/apt/lists/* \
-    && npm install -g openclaw \
+    && npm install -g openclaw@2026.3.8 \
     && useradd -m -s /bin/bash openclaw \
     && mkdir -p /app/data && chown openclaw:openclaw /app/data
 
@@ -19,6 +19,7 @@ DEBUG_PORT=$((9200 + N))
 GATEWAY_PORT=$((18700 + N))
 echo "[${INSTANCE_NAME:-OpenClaw}] debug=:${DEBUG_PORT} gateway=:${GATEWAY_PORT}"
 
+umask 077
 cat > /tmp/openclaw.json <<CFG
 {
   "identity": { "name": "${INSTANCE_NAME:-OpenClaw}", "emoji": "🦞" },
@@ -40,7 +41,7 @@ cat > /tmp/openclaw.json <<CFG
     "order": { "openai": ["openai:sso"] }
   },
   "browser": {
-    "args": ["--remote-debugging-port=${DEBUG_PORT}", "--remote-debugging-address=0.0.0.0"]
+    "args": ["--remote-debugging-port=${DEBUG_PORT}", "--remote-debugging-address=127.0.0.1"]
   },
   "gateway": { "port": ${GATEWAY_PORT} }
 }

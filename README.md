@@ -82,10 +82,16 @@ docker logs claw-1 2>&1 | head -1
 # [Jujuba] debug=:9201 gateway=:18701
 ```
 
-Para intervir (CAPTCHA, login manual, etc), abra no navegador do seu computador:
+A porta de debug so aceita conexoes locais (127.0.0.1). Para intervir (CAPTCHA, login manual, etc), abra um tunel SSH e acesse no navegador:
+
+```bash
+ssh -L 9201:127.0.0.1:9201 user@<ip-do-pi>
+```
+
+Depois abra no navegador:
 
 ```
-http://<ip-do-pi>:9201
+http://localhost:9201
 ```
 
 ## Token expirou?
