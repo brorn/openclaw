@@ -4,15 +4,24 @@ Uma imagem, quantas instancias quiser. Telegram + OpenAI via SSO.
 
 ## Setup
 
-### 1. Docker no Pi 5
+### 1. Git + Docker no Pi 5
 
 ```bash
+sudo apt update && sudo apt install -y git
+
 curl -fsSL https://get.docker.com | sh
 sudo usermod -aG docker $USER && newgrp docker
 sudo apt install docker-compose-plugin
 ```
 
-### 2. Configurar
+### 2. Clonar o projeto
+
+```bash
+git clone https://github.com/brorn/openclaw.git
+cd openclaw
+```
+
+### 3. Configurar
 
 ```bash
 nano .env
@@ -20,13 +29,13 @@ nano .env
 
 Troque `ALLOWED_TELEGRAM_USERS` pelo seu ID numerico ([@userinfobot](https://t.me/userinfobot)).
 
-### 3. Build
+### 4. Build
 
 ```bash
 docker compose build
 ```
 
-### 4. Login OpenAI (uma vez)
+### 5. Login OpenAI (uma vez)
 
 ```bash
 docker compose run --rm -it --entrypoint openclaw openclaw auth login --provider openai
@@ -34,7 +43,7 @@ docker compose run --rm -it --entrypoint openclaw openclaw auth login --provider
 
 Token salvo no volume `auth`, compartilhado por todas as instancias.
 
-### 5. Subir uma instancia
+### 6. Subir uma instancia
 
 ```bash
 docker compose run -d --name claw-1 \
@@ -43,7 +52,7 @@ docker compose run -d --name claw-1 \
   openclaw
 ```
 
-### 6. Mais instancias? Roda de novo
+### 7. Mais instancias? Roda de novo
 
 ```bash
 docker compose run -d --name claw-2 \
