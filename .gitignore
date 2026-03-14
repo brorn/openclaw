@@ -3,3 +3,6 @@
 .claude/
 secrets/*
 !secrets/.gitkeep
+envs/
+config.json
+docker-compose.yml

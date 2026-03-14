@@ -1,209 +1,148 @@
 # OpenClaw Docker — Pi 5
 
-Uma imagem, quantas instancias quiser. OpenAI via SSO, Telegram opcional.
+Uma imagem, quantas instancias quiser. OpenAI Codex via OAuth SSO, Telegram opcional, browser remoto compartilhado.
 
 ## Setup
 
-### 1. Git + Docker no Pi 5
+### 1. Dependencias
 
 ```bash
 sudo apt update && sudo apt install -y git
-
 curl -fsSL https://get.docker.com | sh
 sudo usermod -aG docker $USER && newgrp docker
-sudo apt install docker-compose-plugin
 ```
 
-### 2. Clonar o projeto
+### 2. Clonar e configurar
 
 ```bash
-git clone https://github.com/brorn/openclaw.git
-cd openclaw
+git clone https://github.com/brorn/openclaw.git && cd openclaw
+cp config.example.json config.json
+nano config.json
 ```
 
-### 3. Configurar
+```json
+{
+    "instances": [
+        {
+            "id": "minha_instancia",
+            "agents": [{"name": "assistant", "subAgents": []}],
+            "TELEGRAM_BOT_TOKEN": "",
+            "ALLOWED_TELEGRAM_USERS": ""
+        }
+    ]
+}
+```
+
+Telegram e opcional — deixe `TELEGRAM_BOT_TOKEN` vazio para rodar sem.
+
+### 3. Login OpenAI (uma vez)
 
 ```bash
-cp .env.example .env
-nano .env
+docker compose run --rm -it --entrypoint openclaw <id> configure --section auth
 ```
 
-O Telegram e opcional. Se quiser rodar sem, nao precisa mexer em nada — pule para o passo 4.
+Siga o fluxo OAuth. O token fica no volume `auth`. **Nunca use `docker compose down -v`** — apaga os tokens.
 
-#### Ativar Telegram
-
-Voce precisa de duas coisas: o **token do bot** e o **seu user ID**.
-
-**Token do bot** — pegue com o [@BotFather](https://t.me/BotFather) no Telegram. Depois escolha **uma** das formas abaixo para salvar:
-
-| Metodo | Onde fazer | Como |
-|---|---|---|
-| **Secret (recomendado)** | No terminal, dentro da pasta do projeto | `echo "123456:ABC-DEF" > secrets/telegram_bot_token && chmod 600 secrets/telegram_bot_token` |
-| **Env var (fallback)** | No arquivo `.env` | Adicione a linha `TELEGRAM_BOT_TOKEN=123456:ABC-DEF` |
-
-O secret e mais seguro porque o token fica em arquivo separado, nao aparece em `docker inspect` nem em `/proc/*/environ`. Se os dois existirem, o secret tem prioridade.
-
-**User ID** — descubra o seu enviando qualquer mensagem para [@userinfobot](https://t.me/userinfobot). Depois adicione no `.env`:
-
-```env
-ALLOWED_TELEGRAM_USERS=123456789
-```
-
-Para permitir varios usuarios, separe por virgula: `ALLOWED_TELEGRAM_USERS=111,222,333`
-
-### 4. Docker Content Trust (opcional)
-
-Ative a verificacao de assinaturas de imagens Docker:
+### 4. Subir
 
 ```bash
-echo 'export DOCKER_CONTENT_TRUST=1' >> ~/.bashrc
-source ~/.bashrc
+./manage.sh
 ```
 
-### 5. Build
+Le `config.json`, gera `docker-compose.yml`, sobe os containers. Portas atribuidas automaticamente (18701, 18702, ...).
+
+Dashboard: `http://127.0.0.1:18701/__openclaw__/canvas/`
+
+## Arquitetura
+
+```
+┌─────────────────────────────────────────────────┐
+│  Docker network (172.28.0.0/16)                 │
+│                                                 │
+│  ┌──────────────┐    ┌────────────────────────┐ │
+│  │   browser     │    │  instancia (openclaw)  │ │
+│  │  Chrome 146   │◄───│  gateway :18701        │ │
+│  │  CDP :9222    │    │  Brave API             │ │
+│  │  IP: .0.10   │    │  SSH keys              │ │
+│  └──────────────┘    └────────────────────────┘ │
+└─────────────────────────────────────────────────┘
+```
+
+- **Browser**: container `chromedp/headless-shell` compartilhado por todas as instancias via CDP
+- **Secrets**: arquivos em `secrets/` montados em `/run/secrets/`, auto-exportados como env vars (ex: `brave_api_key` → `BRAVE_API_KEY`)
+- **SSH keys**: `*_deploy` viram `GIT_SSH_COMMAND` automaticamente
+- **Brave Search**: detectado via env `BRAVE_API_KEY` pelo `openclaw doctor --fix`
+- **TOOLS.md**: gerado no workspace de cada agente com instrucoes de browser via CLI
+
+## Secrets
+
+Coloque arquivos em `secrets/`. No startup, o entrypoint:
+
+| Arquivo | Vira |
+|---|---|
+| `*_deploy` | `GIT_SSH_COMMAND` com todas as keys |
+| `*_deploy.pub`, `.gitkeep` | Ignorados |
+| Qualquer outro | Env var em maiusculas (ex: `brave_api_key` → `BRAVE_API_KEY`) |
 
 ```bash
-docker compose build
+chmod 600 secrets/*
 ```
 
-### 6. Login OpenAI (uma vez)
+## Browser
+
+Os agentes acessam o Chrome remoto via CLI (a ferramenta browser integrada nao funciona com CDP remoto). O `TOOLS.md` no workspace de cada agente instrui automaticamente.
+
+### Login manual (2FA, CAPTCHA)
+
+A porta CDP esta exposta em `127.0.0.1:9222`:
+
+1. No Chrome do seu PC, abra `chrome://inspect`
+2. Em "Discover network targets" > Configure, adicione `localhost:9222` (ou `<ip-do-pi>:9222` via SSH tunnel)
+3. A aba aparece — clique **inspect** e faca login normalmente
+4. Feche o DevTools — a sessao permanece no Chrome remoto
+5. Peca pro agente continuar dali
+
+Via SSH tunnel (acesso remoto):
 
 ```bash
-docker compose run --rm -it --entrypoint openclaw openclaw auth login --provider openai
+ssh -L 9222:127.0.0.1:9222 user@<ip-do-pi>
 ```
 
-Token salvo no volume `auth`, compartilhado por todas as instancias.
+## Telegram
 
-### 7. Criar env da instancia
+**Token**: pegue com [@BotFather](https://t.me/BotFather), coloque no `config.json` ou como secret:
 
 ```bash
-cp .env .env.claw1
-nano .env.claw1
+echo "123456:ABC-DEF" > secrets/telegram_bot_token && chmod 600 secrets/telegram_bot_token
 ```
 
-Defina pelo menos o nome da instancia. Se quiser Telegram nesta instancia, adicione o token e user ID (cada instancia precisa do seu proprio bot):
-
-```env
-INSTANCE_NAME=Claw 1
-
-# Telegram (opcional — remova se nao quiser)
-ALLOWED_TELEGRAM_USERS=123456789
-TELEGRAM_BOT_TOKEN=<token_do_botfather>
-```
-
-> **Nota:** para multi-instancia, o token do bot vai direto no `.env.claw1` (env var) em vez de no arquivo secret, porque cada instancia precisa do seu proprio token. Se preferir usar secrets, crie arquivos separados (ex: `secrets/telegram_bot_token_claw1`) e ajuste o volume mount.
-
-### 8. Subir uma instancia
-
-```bash
-docker network create claw-1-net
-docker compose run -d --name claw-1 \
-  --network claw-1-net \
-  -p 127.0.0.1:9201:9201 -p 127.0.0.1:18701:18701 \
-  --env-file .env.claw1 \
-  openclaw
-```
-
-### 9. Mais instancias? Roda de novo
-
-```bash
-cp .env .env.claw2
-nano .env.claw2
-```
-
-```bash
-docker network create claw-2-net
-docker compose run -d --name claw-2 \
-  --network claw-2-net \
-  -p 127.0.0.1:9202:9201 -p 127.0.0.1:18702:18701 \
-  --env-file .env.claw2 \
-  openclaw
-```
-
-Cada uma usa seu bot do Telegram e sua propria rede isolada. Incremente as portas externas (9203/18703, 9204/18704, ...) para cada instancia. Todas as portas ficam acessiveis apenas localmente (127.0.0.1).
+**User ID**: envie qualquer mensagem para [@userinfobot](https://t.me/userinfobot). Multiplos: `"111,222,333"`
 
 ## Comandos
 
 ```bash
-docker ps                                # status
-docker logs -f claw-1                    # logs
-docker restart claw-2                    # reiniciar
-docker stop claw-1 && docker rm claw-1   # remover
-docker stats                             # CPU/RAM
+./manage.sh                                        # aplicar config.json
+docker compose ps                                  # status
+docker compose logs -f <id>                        # logs
+docker compose logs <id> | grep "Gateway token"   # ver token
+docker compose restart <id>                        # reiniciar
+docker compose down                                # parar (SEM -v!)
 ```
 
 ## Seguranca
 
-- **Portas de debug (9201+):** O Chromium remote debugging da acesso total ao browser (cookies, sessoes, execucao de JS). **Sempre** use `127.0.0.1:` ao mapear portas com `-p`. Nunca exponha para a rede sem SSH tunnel.
-- **Token do Telegram (se ativado):** Prefira Docker secrets (`secrets/telegram_bot_token`) em vez de env var. O token fica montado em `/run/secrets/` dentro do container, sem exposicao em `/proc/1/environ`.
-- **Volume `auth`:** Contem tokens de autenticacao do OpenAI. Proteja o host onde o Docker roda.
-- **Multi-instancia:** Ao usar `docker compose run`, as portas do `docker-compose.yml` nao sao mapeadas automaticamente. Sempre passe `-p 127.0.0.1:PORTA:PORTA` explicitamente.
-- **Permissoes:** `chmod 600 .env* secrets/*`
-- **Container hardening:** Filesystem read-only, sem capabilities (`cap_drop: ALL`), `no-new-privileges`, limites de memoria/CPU/PIDs, usuario nao-root, perfil seccomp customizado, rede isolada.
-- **Docker Content Trust:** Ative `DOCKER_CONTENT_TRUST=1` para verificar assinaturas de imagens.
-- **Init process:** O compose usa `init: true` para evitar acumulo de processos zombie do Chromium.
-
-### Hardening avancado (opcional)
-
-**Restricao de egress (firewall no host):**
-
-O container precisa acessar apenas a API do OpenAI (e do Telegram, se ativado). No host, restrinja o trafego de saida com iptables:
-
-```bash
-# Permitir DNS
-sudo iptables -A DOCKER-USER -p udp --dport 53 -j ACCEPT
-# Permitir HTTPS para APIs
-sudo iptables -A DOCKER-USER -p tcp --dport 443 -j ACCEPT
-# Bloquear todo o resto
-sudo iptables -A DOCKER-USER -j DROP
-```
-
-Para uma restricao mais granular, use um proxy HTTPS (ex: squid) com whitelist de dominios (`api.telegram.org`, `api.openai.com`).
-
-**User namespace remapping:**
-
-Mapeia UIDs do container para UIDs nao-privilegiados no host, adicionando isolamento extra. Configure no daemon Docker (`/etc/docker/daemon.json`):
-
-```json
-{ "userns-remap": "default" }
-```
-
-Reinicie o Docker depois. Note que volumes existentes podem precisar de ajuste de permissoes.
-
-**AppArmor profile:**
-
-Um perfil AppArmor pode restringir acesso a caminhos de arquivo alem do que o seccomp oferece. Adicione ao compose:
-
-```yaml
-security_opt:
-  - apparmor:openclaw-profile
-```
-
-Consulte a documentacao do Docker para criar profiles customizados.
-
-## Scan de vulnerabilidades
-
-```bash
-./scan.sh
-```
-
-Roda trivy para verificar vulnerabilidades na imagem, no Dockerfile e secrets expostos. Recomendado rodar periodicamente e antes de cada deploy.
-
-## CAPTCHA ou login no browser?
-
-O Chromium roda headless com remote debugging na porta interna 9201. Use a porta externa que voce mapeou com `-p` ao subir a instancia (ex: 9201 para claw-1, 9202 para claw-2).
-
-A porta de debug so aceita conexoes locais (127.0.0.1). Para intervir (CAPTCHA, login manual, etc), abra um tunel SSH e acesse no navegador:
-
-```bash
-ssh -L 9201:127.0.0.1:9201 user@<ip-do-pi>
-```
-
-Depois abra `http://localhost:9201` no navegador.
+- Portas CDP/gateway em `127.0.0.1` — nunca exponha pra rede
+- Secrets em `/run/secrets/` — nao aparecem em `docker inspect` nem `/proc/*/environ`
+- Container: filesystem read-only, `cap_drop: ALL`, `no-new-privileges`, usuario nao-root, seccomp customizado, rede isolada, limites de RAM/CPU/PIDs
+- `chmod 700 envs/ && chmod 600 secrets/*`
 
 ## Token expirou?
 
 ```bash
-docker compose run --rm -it --entrypoint openclaw openclaw auth login --provider openai
-docker restart claw-1 claw-2
+docker compose run --rm -it --entrypoint openclaw <id> configure --section auth
+docker compose restart <id>
 ```
+
+## Modelo
+
+`openai-codex/gpt-5.4` (fallback: `openai-codex/gpt-4o`) via OAuth SSO — sem API key.

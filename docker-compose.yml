@@ -1,28 +1,59 @@
 services:
-  openclaw:
+  browser:
+    image: chromedp/headless-shell:latest
+    init: true
+    restart: unless-stopped
+    shm_size: "512m"
+    mem_limit: 1G
+    memswap_limit: 1G
+    cpus: "1"
+    read_only: true
+    tmpfs:
+      - /tmp:size=1G
+      - /home/chrome:size=256M
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    ports:
+      - "127.0.0.1:9222:9222"
+    networks:
+      openclaw-net:
+        ipv4_address: 172.28.0.10
+
+  projects:
     build: .
     init: true
     restart: unless-stopped
+    depends_on:
+      - browser
+    environment:
+      - BROWSER_CDP_URL=http://172.28.0.10:9222
     volumes:
-      - auth:/home/openclaw/.openclaw
+      - projects_auth:/home/openclaw/.openclaw
       - ./secrets:/run/secrets:ro
-    env_file: .env
+    env_file: envs/projects.env
     ports:
-      - "127.0.0.1:9201:9201"
       - "127.0.0.1:18701:18701"
     mem_limit: 1536M
     memswap_limit: 1536M
     cpus: "1"
     read_only: true
     tmpfs:
-      - /tmp:size=64M
-      - /run/openclaw:size=1M
+      - /tmp:size=1G
+      - /run/openclaw:size=1M,uid=1001,gid=1001,mode=0700
     security_opt:
       - no-new-privileges:true
       - seccomp:seccomp-profile.json
     cap_drop:
       - ALL
-    pids_limit: 128
+    pids_limit: 256
     logging:
       driver: json-file
       options:
@@ -34,6 +65,9 @@ services:
 networks:
   openclaw-net:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
 
 volumes:
-  auth:
+  projects_auth:

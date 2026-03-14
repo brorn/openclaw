@@ -1,36 +1,23 @@
-FROM node:20-bookworm-slim@sha256:a82f40540f5959e0003fb7b3c0f80490def2927be8bdbee7e3e0ac65cce3be92
+FROM node:22-bookworm-slim
 
-RUN apt-get update && apt-get install -y --no-install-recommends chromium \
+RUN apt-get update && apt-get install -y --no-install-recommends git openssh-client ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
     && npm install -g openclaw@2026.3.8 \
+    && printf '#!/bin/sh\necho "Chromium stub for remote CDP"\nexit 0\n' > /usr/bin/chromium \
+    && chmod +x /usr/bin/chromium \
     && useradd -m -s /usr/sbin/nologin openclaw \
-    && mkdir -p /app/data /run/openclaw /run/secrets \
-    && chown openclaw:openclaw /app/data /run/openclaw /run/secrets
+    && mkdir -p /app/data /run/openclaw /run/secrets /home/openclaw/.openclaw \
+    && chown openclaw:openclaw /app/data /run/openclaw /run/secrets /home/openclaw/.openclaw
 
 COPY <<'ENTRY' /usr/local/bin/entrypoint.sh
 #!/bin/sh
 set -eu
 
-# --- carregar secrets de arquivo (Docker secrets) ---
-if [ -f /run/secrets/telegram_bot_token ]; then
-  if [ -n "${TELEGRAM_BOT_TOKEN:-}" ]; then
-    echo "AVISO: TELEGRAM_BOT_TOKEN em env var ignorado; usando Docker secret" >&2
-  fi
-  TELEGRAM_BOT_TOKEN=$(cat /run/secrets/telegram_bot_token)
-  export TELEGRAM_BOT_TOKEN
-fi
-
-# --- validacao de inputs (telegram opcional) ---
-if [ -n "${TELEGRAM_BOT_TOKEN:-}" ]; then
-  case "$TELEGRAM_BOT_TOKEN" in
-    *[!A-Za-z0-9:_-]*) echo "ERRO: TELEGRAM_BOT_TOKEN contem caracteres invalidos" >&2; exit 1 ;;
-  esac
-  : "${ALLOWED_TELEGRAM_USERS:?required quando TELEGRAM_BOT_TOKEN esta definido}"
+# --- validacao de ALLOWED_TELEGRAM_USERS ---
+if [ -n "${ALLOWED_TELEGRAM_USERS:-}" ]; then
   case "$ALLOWED_TELEGRAM_USERS" in
     *[!0-9,\ ]*|*,,*|,*|*,) echo "ERRO: ALLOWED_TELEGRAM_USERS formato invalido (use: ID1,ID2)" >&2; exit 1 ;;
   esac
-else
-  echo "AVISO: TELEGRAM_BOT_TOKEN nao definido — rodando sem Telegram" >&2
 fi
 
 # limite de tamanho (max 64 chars)
@@ -44,52 +31,173 @@ case "${INSTANCE_NAME:-OpenClaw}" in
   *[![:print:]]*) echo "ERRO: INSTANCE_NAME contem caracteres invalidos" >&2; exit 1 ;;
 esac
 
-export DEBUG_PORT=9201
+# --- secrets como variaveis de ambiente ---
+# SSH deploy keys: configuram GIT_SSH_COMMAND (multiplas keys via config)
+_ssh_keys=""
+for _f in /run/secrets/*_deploy; do
+  [ -f "$_f" ] || continue
+  _ssh_keys="$_ssh_keys -i $_f"
+done
+if [ -n "$_ssh_keys" ]; then
+  export GIT_SSH_COMMAND="ssh$_ssh_keys -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes"
+fi
+
+# Demais secrets: exporta como ENV_VAR (nome em maiusculas)
+# Ignora: *_deploy, *_deploy.pub, .gitkeep
+for _f in /run/secrets/*; do
+  [ -f "$_f" ] || continue
+  _name="$(basename "$_f")"
+  case "$_name" in
+    *_deploy|*_deploy.pub|.gitkeep) continue ;;
+  esac
+  _var="$(echo "$_name" | tr '[:lower:].' '[:upper:]_')"
+  export "$_var=$(cat "$_f")"
+done
+
 export GATEWAY_PORT=18701
-echo "[${INSTANCE_NAME:-OpenClaw}] debug=:${DEBUG_PORT} gateway=:${GATEWAY_PORT}"
+if [ -n "${BROWSER_CDP_URL:-}" ]; then
+  echo "[${INSTANCE_NAME:-OpenClaw}] browser=remote (${BROWSER_CDP_URL})"
+fi
+echo "[${INSTANCE_NAME:-OpenClaw}] gateway=:${GATEWAY_PORT}"
 
 umask 077
 node -e '
 const fs = require("fs");
+const name = process.env.INSTANCE_NAME || "OpenClaw";
+const allowedUsers = (process.env.ALLOWED_TELEGRAM_USERS || "").split(",").map(s => s.trim()).filter(Boolean);
+const agents = process.env.AGENTS_JSON ? JSON.parse(process.env.AGENTS_JSON) : [];
+
+// --- agents list ---
+const agentsList = agents.length
+  ? agents.map((a, i) => ({
+      id: a.name,
+      ...(i === 0 ? { default: true } : {}),
+      identity: { name: a.name, emoji: "\uD83E\uDD9E" },
+      subagents: {
+        allowAgents: a.subAgents && a.subAgents.length ? a.subAgents : ["*"]
+      }
+    }))
+  : [{ id: "main", default: true, identity: { name: name, emoji: "\uD83E\uDD9E" }, subagents: { allowAgents: ["*"] } }];
+
+// --- telegram: token no nivel da instancia ---
+const channels = {};
+const bindings = [];
+const tokenRe = /^[A-Za-z0-9:_-]+$/;
+
+const token = process.env.TELEGRAM_BOT_TOKEN || "";
+if (token) {
+  if (!tokenRe.test(token)) { console.error("ERRO: TELEGRAM_BOT_TOKEN invalido"); process.exit(1); }
+  if (!allowedUsers.length) { console.error("ERRO: ALLOWED_TELEGRAM_USERS required quando ha token Telegram"); process.exit(1); }
+  channels["telegram"] = {
+    enabled: true,
+    botToken: token,
+    dmPolicy: "allowlist",
+    allowFrom: allowedUsers
+  };
+  if (agentsList.length > 0) {
+    bindings.push({ agentId: agentsList[0].id, match: { channel: "telegram" } });
+  }
+}
+
+// --- browser: remote CDP ---
+const browserCdpUrl = process.env.BROWSER_CDP_URL || "";
+const browserConfig = browserCdpUrl ? {
+  browser: {
+    enabled: true,
+    defaultProfile: "remote",
+    profiles: {
+      remote: {
+        cdpUrl: browserCdpUrl,
+        headless: true,
+        noSandbox: true,
+        color: "#00AA00"
+      }
+    }
+  }
+} : {};
+
 const config = {
-  identity: { name: process.env.INSTANCE_NAME || "OpenClaw", emoji: "\uD83E\uDD9E" },
   agents: {
     defaults: {
-      model: { primary: "openai/gpt-4o", fallbacks: ["openai/gpt-4-turbo"] }
-    }
-  },
-  channels: Object.assign({},
-    process.env.TELEGRAM_BOT_TOKEN ? {
-      telegram: {
-        enabled: true,
-        botToken: process.env.TELEGRAM_BOT_TOKEN,
-        dmPolicy: "allowlist",
-        allowFrom: process.env.ALLOWED_TELEGRAM_USERS.split(",").map(s => s.trim())
+      model: { primary: "openai-codex/gpt-5.4", fallbacks: ["openai-codex/gpt-4o"] },
+      subagents: {
+        maxSpawnDepth: 2,
+        maxChildrenPerAgent: 5,
+        maxConcurrent: 8
       }
-    } : {}
-  ),
+    },
+    list: agentsList
+  },
+  channels: channels,
+  ...(bindings.length ? { bindings: bindings } : {}),
+  ...browserConfig,
   auth: {
-    profiles: { "openai:sso": { mode: "sso" } },
+    profiles: { "openai:sso": { provider: "openai", mode: "oauth" } },
     order: { openai: ["openai:sso"] }
   },
-  browser: {
-    args: [
-      "--disable-setuid-sandbox",
-      "--remote-debugging-port=" + process.env.DEBUG_PORT,
-      "--remote-debugging-address=127.0.0.1"
-    ]
-  },
-  gateway: { port: parseInt(process.env.GATEWAY_PORT) }
+  gateway: {
+    port: parseInt(process.env.GATEWAY_PORT),
+    mode: "local",
+    controlUi: { allowedOrigins: ["http://127.0.0.1:" + process.env.GATEWAY_PORT] }
+  }
 };
-fs.writeFileSync("/run/openclaw/config.json", JSON.stringify(config, null, 2), { mode: 0o600 });
+const configDir = require("os").homedir() + "/.openclaw";
+fs.mkdirSync(configDir, { recursive: true, mode: 0o700 });
+fs.writeFileSync(configDir + "/openclaw.json", JSON.stringify(config, null, 2), { mode: 0o600 });
+
+// --- TOOLS.md: instruções de browser para todos os agentes ---
+const toolsMd = `# Browser
+
+NÃO use a ferramenta browser integrada — ela não funciona neste ambiente.
+
+Para acessar páginas web, use bash com os comandos CLI do OpenClaw:
+
+\`\`\`bash
+# abrir URL numa aba
+openclaw browser open <url> --browser-profile remote --json
+
+# capturar conteúdo da página (accessibility tree)
+openclaw browser snapshot --format aria --browser-profile remote
+
+# capturar screenshot
+openclaw browser screenshot --browser-profile remote
+
+# navegar na aba atual
+openclaw browser navigate <url> --browser-profile remote
+
+# listar abas abertas
+openclaw browser tabs --browser-profile remote --json
+
+# fechar aba
+openclaw browser close <targetId> --browser-profile remote
+\`\`\`
+
+Sempre use \`--browser-profile remote\` em todos os comandos browser.
+`;
+
+// escrever TOOLS.md no workspace de cada agente
+const os = require("os");
+const wsBase = os.homedir() + "/.openclaw";
+agentsList.forEach(a => {
+  const wsDir = wsBase + "/workspace-" + a.id;
+  fs.mkdirSync(wsDir, { recursive: true, mode: 0o700 });
+  fs.writeFileSync(wsDir + "/TOOLS.md", toolsMd, { mode: 0o644 });
+});
+// workspace default tambem
+fs.mkdirSync(wsBase + "/workspace", { recursive: true, mode: 0o700 });
+fs.writeFileSync(wsBase + "/workspace/TOOLS.md", toolsMd, { mode: 0o644 });
 '
 
-exec openclaw gateway start --config /run/openclaw/config.json
+OPENCLAW_GATEWAY_TOKEN="${OPENCLAW_GATEWAY_TOKEN:-$(head -c 32 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 32)}"
+export OPENCLAW_GATEWAY_TOKEN
+echo "Gateway token: ${OPENCLAW_GATEWAY_TOKEN}"
+openclaw doctor --fix 2>/dev/null || true
+exec openclaw gateway run --bind lan --token "$OPENCLAW_GATEWAY_TOKEN"
 ENTRY
 
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
   CMD node -e "require('http').get('http://127.0.0.1:18701',r=>{process.exit(r.statusCode<500?0:1)}).on('error',()=>process.exit(1))"
 
 USER openclaw
